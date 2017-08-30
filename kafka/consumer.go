@@ -256,6 +256,43 @@ func (c *Consumer) Poll(timeoutMs int) (event Event) {
 	return ev
 }
 
+// PollMany messages or events from consumer.
+//
+// Will block for at most timeoutMs milliseconds
+//
+// The following callbacks may be triggered:
+//   Subscribe()'s rebalanceCb
+//
+// Return empty Event slice on timeout, else Event slice.
+func (c *Consumer) PollMany(timeoutMs, maxEvents int) (events []Event) {
+	for i := 0; i < maxEvents; i++ {
+		ev, _ := c.handle.eventPoll(nil, timeoutMs, 1, nil)
+		if ev == nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	return
+}
+
+// Position get offset of given partition
+//
+// Will block for at most timeoutMs milliseconds
+//
+// Position() may only be used for partitions already begin consumed
+// (through Assign() or implicitly through a self-rebalanced Subscribe()).
+//
+// Return zero Offset and an error on failure or non-zero offset and nil otherwise.
+func (c *Consumer) Position(partition TopicPartition, timeoutMs int) (Offset, error) {
+	cparts := newCPartsFromTopicPartitions([]TopicPartition{partition})
+	cErr := C.rd_kafka_position(c.handle.rk, cparts)
+	if cErr != C.RD_KAFKA_RESP_ERR_NO_ERROR {
+		return 0, newError(cErr)
+	}
+	positions := newTopicPartitionsFromCparts(cparts)
+	return positions[0].Offset, nil
+}
+
 // Events returns the Events channel (if enabled)
 func (c *Consumer) Events() chan Event {
 	return c.events
